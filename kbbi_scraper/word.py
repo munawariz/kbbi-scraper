@@ -1,4 +1,4 @@
-from kbbi_scraper import constants, meaning
+from kbbi_scraper import constants
 
 from functools import cached_property
 from bs4 import BeautifulSoup
