@@ -1,39 +1,59 @@
-SOURCE_URL = 'https://kbbi.co.id'
-WORD_DETAIL_URL = f'{SOURCE_URL}/arti-kata'
-WORD_LIST_URL = f'{SOURCE_URL}/daftar-kata'
-WORD_SEARCH_URL = f'{SOURCE_URL}/cari?kata='
+SOURCE_URL = 'https://www.kbbi.web.id'
 
-SYMBOL = {
+CATEGORY = {
     'a': {
+        'symbol': 'a',
         'verbose': 'Adjektiva',
         'meaning': 'Bentuk Kata Sifat'
     },
     'v': {
+        'symbol': 'v',
         'verbose': 'Verba',
         'meaning': 'Bentuk Kata Kerja'
     },
     'n': {
+        'symbol': 'n',
         'verbose': 'Nomina',
         'meaning': 'Bentuk Kata Benda'
     },
     'ki': {
+        'symbol': 'ki',
         'verbose': 'Kiasan',
         'meaning': 'Bentuk Kata Kiasan'
     },
     'pron': {
+        'symbol': 'pron',
         'verbose': 'Pronomina',
         'meaning': 'Bentuk Kata Yang Meliputi Kata Ganti, Kata Tunjuk, Atau Kata Tanya'
     },
     'cak': {
-        'verbose': None,
+        'symbol': 'cak',
+        'verbose': 'Percakapan',
         'meaning': 'Bentuk Kata Percakapan (Tidak Baku)'
     },
     'ark': {
+        'symbol': 'ark',
         'verbose': 'Arkais',
         'meaning': 'Bentuk Kata Yang Tidak Lazim Digunakan'
     },
     'adv': {
+        'symbol': 'adv',
         'verbose': 'Adverbia',
         'meaning': 'Bentuk Kata Yang Berupa Kata Keterangan'
+    },
+    'pb': {
+        'symbol': 'pb',
+        'verbose': 'Peribahasa',
+        'meaning': 'Contoh Kata Peribahasa'
+    },
+    'tern': {
+        'symbol': 'tern',
+        'verbose': 'Peternakan',
+        'meaning': None
+    },
+    'tern': {
+        'symbol': 'pet',
+        'verbose': 'Petrologi',
+        'meaning': 'Bersangkutan Minyak dan Gas Bumi'
     }
 }

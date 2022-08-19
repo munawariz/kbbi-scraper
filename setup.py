@@ -5,7 +5,7 @@ HERE = pathlib.Path(__file__).parent
 README = (HERE / "README.md").read_text()
 setup(
   name="kbbi_scraper",
-  version="0.a3",
+  version="0.a4",
   description="https://kbbi.co.id/ scraper",
   long_description=README,
   long_description_content_type="text/markdown",
@@ -14,5 +14,5 @@ setup(
   license="Apache License",
   packages=["kbbi_scraper"],
   zip_safe=False,
-  install_requires=["requests", "beautifulsoup4"]
+  install_requires=["selenium", "beautifulsoup4", "chromedriver-autoinstaller"]
 )

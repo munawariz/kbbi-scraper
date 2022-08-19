@@ -1,7 +1,11 @@
 from kbbi_scraper import Word
 
-kambing = Word('kambing')
+WORD_BENCHMARK = [
+    'kambing',
+    'ikan'
+]
 
-for arti in kambing.definition:
-    print(arti.word)
-    print(arti.meaning)
+kambing = Word('kambing')
+print(kambing.base_word)
+print(kambing.syllables)
+print(kambing.definition)
