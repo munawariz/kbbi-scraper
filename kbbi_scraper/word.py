@@ -16,9 +16,7 @@ chrome_options.add_argument("--disable-logging")
 chrome_options.add_argument("--headless")
 
 import chromedriver_autoinstaller
-
-chromedriver_autoinstaller.install()  
-driver = webdriver.Chrome(options=chrome_options)
+chromedriver_autoinstaller.install()
 
 class Word:
     def __init__(self, word):
