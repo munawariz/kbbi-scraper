@@ -8,6 +8,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException
+
 chrome_options = Options()
 chrome_options.add_argument("--disable-extensions")
 chrome_options.add_argument("--disable-gpu")
@@ -108,3 +109,30 @@ class Word:
     @cached_property
     def related_words(self):
         return self.d1_section
+
+    @cached_property
+    def pribahasa(self):
+        meaning = []
+        # Cari tag em dengan class pb untuk pribahasa
+        for pb in self.d1_section.select("em.pb"):
+            mean = []
+            # looping jika next element adalah tag b dengan class num, itu berarti pribahasa memiliki lebih dari 1 arti
+            if 'num' in pb.next_sibling.next_sibling['class']:
+                for num in pb.find_all_next('b', {'class': 'num'}):
+                    mean.append(self._format_string(num.next_sibling))
+            
+            if not len(mean):
+                mean.append(self._format_string(pb.next_sibling))
+
+            meaning.append(
+                {
+                    'meaning': mean,
+                    'pribahasa': [ex for ex in pb.text.replace('--', self.word).replace(', pb', '').split(';') if self.word in ex ][0]
+                }
+            )
+
+        return meaning
+
+    def _format_string(self, str):
+        return str.strip().strip(';').strip(':').capitalize()
+            
