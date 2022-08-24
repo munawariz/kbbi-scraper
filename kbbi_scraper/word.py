@@ -24,7 +24,7 @@ class Word:
     def __init__(self, word):
         self.word = word
         self.url = f'{constants.SOURCE_URL}/{word}'
-        self.driver = driver
+        self.driver = webdriver.Chrome(options=chrome_options)
 
     def __str__(self):
         return self.word
@@ -116,22 +116,33 @@ class Word:
         # Cari tag em dengan class pb untuk pribahasa
         for pb in self.d1_section.select("em.pb"):
             mean = []
+            pb_text = ''
             # looping jika next element adalah tag b dengan class num, itu berarti pribahasa memiliki lebih dari 1 arti
-            if 'num' in pb.next_sibling.next_sibling['class']:
+            if 'class' in pb.next_sibling.next_sibling.attrs and 'num' in pb.next_sibling.next_sibling['class']:
                 for num in pb.find_all_next('b', {'class': 'num'}):
                     mean.append(self._format_string(num.next_sibling))
             
             if not len(mean):
-                mean.append(self._format_string(pb.next_sibling))
+                mean.append(self._format_string(pb.next_sibling).split(';')[0])
+
+            if '--' in pb.previous_sibling:
+                previous_pb = [ex for ex in (pb.previous_sibling.split(';') if ':' not in pb.previous_sibling else pb.previous_sibling.split(':')) if '--' in ex][0]
+                pb_text = f'{previous_pb} {pb.text}'
+
+            if not pb_text:
+                pb_text = pb.text
 
             meaning.append(
                 {
                     'meaning': mean,
-                    'pribahasa': [ex for ex in pb.text.replace('--', self.word).replace(', pb', '').split(';') if self.word in ex ][0]
+                    'pribahasa': [ex for ex in self._format_pribahasa(pb_text).split(';') if self.word in ex ][0]
                 }
             )
 
         return meaning
+
+    def _format_pribahasa(self, str):
+       return str.strip().replace('--', self.word).replace(', pb', '')
 
     def _format_string(self, str):
         return str.strip().strip(';').strip(':').capitalize()
