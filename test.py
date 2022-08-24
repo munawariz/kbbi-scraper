@@ -6,6 +6,4 @@ WORD_BENCHMARK = [
 ]
 
 kambing = Word('kambing')
-print(kambing.base_word)
-print(kambing.syllables)
-print(kambing.definition)
+print(kambing.pribahasa)
