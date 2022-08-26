@@ -1,4 +1,4 @@
-from kbbi_scraper import constants
+from kbbi_scraper import constants, utils
 
 from functools import cached_property
 from bs4 import BeautifulSoup
@@ -20,23 +20,39 @@ chromedriver_autoinstaller.install()
 
 class Word:
     def __init__(self, word):
-        self.word = word
+        self.input_word = word
         self.url = f'{constants.SOURCE_URL}/{word}'
-        self.driver = webdriver.Chrome(options=chrome_options)
 
-    def __str__(self):
-        return self.word
+    def __repr__(self):
+        return self.input_word
     
     @cached_property
     def soup(self):
-        self.driver.get(self.url)
-        try:
-            element = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "content")))
-            soup = BeautifulSoup(element.get_attribute('innerHTML'), 'html.parser')
-            self.driver.close()
-            return soup
-        except TimeoutException:
-            print("Failed to load web source")
+        bowl = utils.load_soup_bowl()
+        
+        if self.input_word in bowl:
+            return BeautifulSoup(bowl[self.input_word], 'html.parser')
+        else:
+            self.driver = webdriver.Chrome(options=chrome_options)
+            self.driver.get(self.url)
+            try:
+                element = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "content")))
+                soup = BeautifulSoup(element.get_attribute('innerHTML'), 'html.parser')
+                self.driver.close()
+
+
+                # Clean and store fetched html locally
+                for ads in soup.find_all('script'):
+                    ads.decompose()
+
+                for ads in soup.find_all('ins'):
+                    ads.decompose()
+
+                bowl[self.input_word] = soup.decode()
+                utils.dump_soup_bowl(bowl)
+                return soup
+            except TimeoutException:
+                print("Failed to load web source")
 
     @cached_property
     def desc_section(self):
@@ -47,13 +63,20 @@ class Word:
         return self.soup.find('div', {'id': 'd1'})
 
     @cached_property
-    def base_word(self):
+    def base_word(self) -> str:
         return ''.join(self.syllables)
 
     @cached_property
-    def syllables(self):
+    def word(self) -> str:
+        if (self.d1_section.select_one('b.mjk') and self.d1_section.select_one('b.mjk').parent == self.d1_section):
+            return self.d1_section.select_one('b.mjk').next_element.text.replace('--', self.base_word).title()
+        else:
+            return self.syllables
+
+    @cached_property
+    def syllables(self) -> list:
         try:
-            syllable = self.d1_section.find_next('span', {'class': 'per-suku'}).text.strip('/').strip('\\')
+            syllable = self.d1_section.select_one('span.per-suku').text.strip('/').strip('\\')
         except AttributeError:
             syllable = self.d1_section.find('b', {'class': 'highlight'}).text.strip('/').strip('\\')
         
@@ -64,7 +87,7 @@ class Word:
             return syllable.split('·')
 
     @cached_property
-    def definition(self):
+    def definition(self) -> list:
         meaning = []
         for num in self.d1_section.find_all_next('b', {'class': 'num'}):
             # Cuma nomor yang ada di div d1 section, yang ada didalem div sub_17 skip
@@ -84,9 +107,12 @@ class Word:
                     if category == constants.CATEGORY[self.d1_section.find_next('em', {'class': 'jk'}).text.lower()]:
                         m = num.next_element.next_element
                     else:
-                        m = num.find_next('em', {'class': 'jk'}).next_element.next_element
+                        m = num.select_one('em.jk').next_element.next_element
 
                 m_formatted = m.text.strip().strip(';').strip(':').capitalize()
+                if (', ' in m_formatted and m.next_element == m.find_next_sibling('em')):
+                    m_formatted.replace(',', '')
+                    m_formatted += f"({m.find_next_sibling('em').text})"
                     
                 meaning.append({
                     'meaning': m_formatted,
@@ -95,10 +121,21 @@ class Word:
                 })
             
         if not len(meaning):
+            if (self.d1_section.select_one('b.mjk') and self.d1_section.select_one('b.mjk').parent == self.d1_section):
+                m = self.d1_section.select_one('b.mjk').next_element.next_element
+            else:
+                m = self.d1_section.select_one('em.jk').next_element.next_element
+
+            m_formatted = m.text.strip().strip(';').strip(':').capitalize()
+
+            if (',' in m_formatted and m.next_element == m.find_next_sibling('em')):
+                m_formatted += f"({m.find_next_sibling('em').text})"
+                m_formatted = m_formatted.replace(',', '').strip()
+                
             meaning.append(
                 {
-                    'meaning': self.d1_section.find_next('em', {'class': 'jk'}).next_element.next_element.text.strip().strip(';').strip(':').capitalize(),
-                    'category': constants.CATEGORY[self.d1_section.find_next('em', {'class': 'jk'}).text.lower()],
+                    'meaning': m_formatted,
+                    'category': constants.CATEGORY[self.d1_section.select_one('em.jk').text.lower()],
                     'example': None
                 }
             )
@@ -106,10 +143,22 @@ class Word:
     
     @cached_property
     def related_words(self):
-        return self.d1_section
+        related_words = []
+
+        for related_word in self.soup.select_one('div#word div#w1 ul#u1').find_all('li'):
+            link = related_word.find_next('a')
+            if 'cur' in link['class']:
+                continue
+
+            related_words.append(Word(link.get('href').lstrip('./')))
+
+        for related_word in self.soup.select_one('div#word div#w2 ul#u2').find_all('li'):
+            related_words.append(Word(related_word.find_next('a').get('href').lstrip('./')))
+
+        return related_words
 
     @cached_property
-    def pribahasa(self):
+    def pribahasa(self) -> list:
         meaning = []
         # Cari tag em dengan class pb untuk pribahasa
         for pb in self.d1_section.select("em.pb"):
@@ -139,9 +188,11 @@ class Word:
 
         return meaning
 
-    def _format_pribahasa(self, str):
+    def _format_pribahasa(self, str) -> str:
        return str.strip().replace('--', self.word).replace(', pb', '')
 
-    def _format_string(self, str):
+    def _format_string(self, str) -> str:
         return str.strip().strip(';').strip(':').capitalize()
             
+    def _is_already_in_bowl(self):
+        return self.input_word in utils.load_soup_bowl()
