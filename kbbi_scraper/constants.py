@@ -51,9 +51,14 @@ CATEGORY = {
         'verbose': 'Peternakan',
         'meaning': None
     },
-    'tern': {
+    'pet': {
         'symbol': 'pet',
         'verbose': 'Petrologi',
         'meaning': 'Bersangkutan Minyak dan Gas Bumi'
+    },
+    'kl': {
+        'symbol': 'kl',
+        'verbose': 'Klasik',
+        'meaning': 'Digunakan Dalam Ragam Kesusasraan Melayu Klasik'
     }
 }

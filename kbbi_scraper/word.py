@@ -19,9 +19,10 @@ import chromedriver_autoinstaller
 chromedriver_autoinstaller.install()
 
 class Word:
-    def __init__(self, word):
+    def __init__(self, word, cache: bool=True):
         self.input_word = word
         self.url = f'{constants.SOURCE_URL}/{word}'
+        self.cache = cache
 
     def __repr__(self):
         return self.input_word
@@ -30,7 +31,7 @@ class Word:
     def soup(self):
         bowl = utils.load_soup_bowl()
         
-        if self.input_word in bowl:
+        if self.input_word in bowl and self.cache:
             return BeautifulSoup(bowl[self.input_word], 'html.parser')
         else:
             self.driver = webdriver.Chrome(options=chrome_options)
@@ -40,16 +41,13 @@ class Word:
                 soup = BeautifulSoup(element.get_attribute('innerHTML'), 'html.parser')
                 self.driver.close()
 
+                # Clean and store fetched html locally, excluding unnecessary google ads script
+                if self.cache:    
+                    for ads in soup.find_all('script'): ads.decompose()
+                    for ads in soup.find_all('ins'): ads.decompose()
+                    bowl[self.input_word] = soup.decode()
+                    utils.dump_soup_bowl(bowl)
 
-                # Clean and store fetched html locally
-                for ads in soup.find_all('script'):
-                    ads.decompose()
-
-                for ads in soup.find_all('ins'):
-                    ads.decompose()
-
-                bowl[self.input_word] = soup.decode()
-                utils.dump_soup_bowl(bowl)
                 return soup
             except TimeoutException:
                 print("Failed to load web source")
@@ -59,8 +57,12 @@ class Word:
         return self.soup.find('div', {'id': 'desc'})
 
     @cached_property
+    def word_section(self):
+        return self.soup.find('div', {'id': 'desc'})
+
+    @cached_property
     def d1_section(self):
-        return self.soup.find('div', {'id': 'd1'})
+        return self.soup.find('div', {'id': 'd1'})   
 
     @cached_property
     def base_word(self) -> str:
@@ -68,78 +70,160 @@ class Word:
 
     @cached_property
     def word(self) -> str:
-        if (self.d1_section.select_one('b.mjk') and self.d1_section.select_one('b.mjk').parent == self.d1_section):
-            return self.d1_section.select_one('b.mjk').next_element.text.replace('--', self.base_word).title()
+        composite_word = self.d1_section.select_one('b.mjk')
+        if (composite_word and composite_word.parent == self.d1_section):
+            return composite_word.next_element.text.replace('--', self.base_word).title()
         else:
-            return self.syllables
+            return ''.join(self.syllables)
 
     @cached_property
     def syllables(self) -> list:
-        try:
-            syllable = self.d1_section.select_one('span.per-suku').text.strip('/').strip('\\')
-        except AttributeError:
-            syllable = self.d1_section.find('b', {'class': 'highlight'}).text.strip('/').strip('\\')
-        
-        try:
-            word_number = self.d1_section.find('b').find('sup').text
+        """
+        Return a list of the word's syllable
+        """
+
+        per_suku = self.d1_section.select_one('span.per-suku')
+        if per_suku and per_suku.parent == self.d1_section:
+            syllable = per_suku.text.strip('/').strip('\\')
+        else:
+            syllable = self.d1_section.select_one('b.highlight').text.strip('/').strip('\\')
+
+        word_number = self.d1_section.find('b').find('sup')
+        if word_number and word_number.parent == self.d1_section:
             return syllable.replace(word_number, '').split('·')
-        except AttributeError:
+        else:
             return syllable.split('·')
 
     @cached_property
-    def definition(self) -> list:
-        meaning = []
-        for num in self.d1_section.find_all_next('b', {'class': 'num'}):
-            # Cuma nomor yang ada di div d1 section, yang ada didalem div sub_17 skip
-            if num.parent == self.d1_section:
+    def meanings(self) -> list:
+        """
+        Return a list of meaning -> a dictionary containing
+            {
+                meaning: one of (if many) word's meaning,
+                category: part of speech or any other category that the source decided to put,
+                example: if any
+            }
+        """
+        meanings = []
+        # get all words multiple meaning if any, excluding any that are not direct child of d1_section and not in peribahasa_section
+        numbers = [number for number in self.d1_section.select('b.num') if number.parent == self.d1_section and not number.find_previous('em', {'class': 'pb'})]
 
-                # Arti dari peribahasa jangan dibawa, itu untuk property peribahasa
-                if num.find_previous('em', {'class': 'pb'}):
-                    continue
-    
-                if num.text == "1":
-                    category = constants.CATEGORY[self.d1_section.find_next('em', {'class': 'jk'}).text.lower()]
-                    m = num.next_element.next_element
-                else:
-                    category = constants.CATEGORY[num.find_next('em', {'class': 'jk'}).text.lower()] or constants.CATEGORY[self.d1_section.find_next('em', {'class': 'jk'}).text.lower()]
+        def extract_meaning_and_example(meaning):
+            cleaned_meaning = self._format_string(meaning.text)
+            if (',' in cleaned_meaning and meaning.next_sibling == meaning.find_next_sibling('em') and meaning.next_sibling != meaning.find_next_sibling('em', {'class': 'pb'})):
+                cleaned_meaning = cleaned_meaning.replace(',', '')
+                cleaned_meaning += f"({meaning.find_next_sibling('em').text})"
 
-                    # Check if word is in the same category as the previous word
-                    if category == constants.CATEGORY[self.d1_section.find_next('em', {'class': 'jk'}).text.lower()]:
-                        m = num.next_element.next_element
-                    else:
-                        m = num.select_one('em.jk').next_element.next_element
-
-                m_formatted = m.text.strip().strip(';').strip(':').capitalize()
-                if (', ' in m_formatted and m.next_element == m.find_next_sibling('em')):
-                    m_formatted.replace(',', '')
-                    m_formatted += f"({m.find_next_sibling('em').text})"
-                    
-                meaning.append({
-                    'meaning': m_formatted,
-                    'category': category,
-                    'example': m.find_next('em').text.replace('--', m_formatted).strip().strip(';').capitalize() if m.text.strip().endswith(':') else None
-                })
-            
-        if not len(meaning):
-            if (self.d1_section.select_one('b.mjk') and self.d1_section.select_one('b.mjk').parent == self.d1_section):
-                m = self.d1_section.select_one('b.mjk').next_element.next_element
+            # Check if meaning has an example 
+            if meaning.text.strip().endswith(':'):
+                example = meaning.find_next('em').text.replace('--', cleaned_meaning).strip().strip(';').capitalize()
             else:
-                m = self.d1_section.select_one('em.jk').next_element.next_element
+                example = None 
 
-            m_formatted = m.text.strip().strip(';').strip(':').capitalize()
+            return cleaned_meaning, example
 
-            if (',' in m_formatted and m.next_element == m.find_next_sibling('em')):
-                m_formatted += f"({m.find_next_sibling('em').text})"
-                m_formatted = m_formatted.replace(',', '').strip()
+        if numbers:
+            for number in numbers:
+                categories_symbol = self.d1_section.find_next('em', {'class': 'jk'}).text.lower().split(' ')
+                default_category = [constants.CATEGORY[category] for category in categories_symbol]
+
+                if number.text == "1":
+                    categories = default_category
+                    meaning = number.next_element.next_element
+                else:
+                    categories_symbol = number.find_next('em', {'class': 'jk'}).text.lower().split(' ')
+                    categories = [constants.CATEGORY[category] for category in categories_symbol] or default_category
+                    meaning = number.next_element.next_element if categories == default_category else number.find_next('em', {'class': 'jk'}).next_element.next_element
+
+                meaning, example = extract_meaning_and_example(meaning)
+
+                meanings.append({
+                    'meaning': meaning,
+                    'category': categories,
+                    'example': example
+                })
+        else:
+            categories_symbol = self.d1_section.find_next('em', {'class': 'jk'}).text.lower().split(' ')
+            composite_word = self.d1_section.select_one('b.mjk')
+            if (composite_word and composite_word.parent == self.d1_section):
+                meaning = composite_word.next_element.next_element
+            else:
+                meaning = self.d1_section.select_one('em.jk').next_element.next_element
+
+            meaning, example = extract_meaning_and_example(meaning)
                 
-            meaning.append(
-                {
-                    'meaning': m_formatted,
-                    'category': constants.CATEGORY[self.d1_section.select_one('em.jk').text.lower()],
-                    'example': None
-                }
-            )
-        return meaning
+            meanings.append({
+                'meaning': meaning,
+                'categories': [constants.CATEGORY[category] for category in categories_symbol],
+                'example': example
+            })
+
+        return meanings
+    
+    # Kata turunan, kata dasar yang diberi imbuhan dll
+    @cached_property
+    def derived_words(self):
+        derives = []
+        for word in self.d1_section.select('b.tur'):
+            numbers = word.find_next_siblings('b', {'class': 'num'}) or []
+            syllables = word.find_next_sibling('span', {'class': 'per-suku'})
+
+            # filter only derived word that have syllable, exclude any that doesn't have any
+            if syllables.find_previous_sibling('b', {'class': 'tur'}) != word:
+                continue
+            
+            if numbers:
+                meanings = []
+                for number in numbers:
+                    categories_symbol = self.d1_section.find_next('em', {'class': 'jk'}).text.lower().split(' ')
+                    default_category = [constants.CATEGORY[category] for category in categories_symbol]
+                    
+                    if number.find_previous('b', {'class': 'tur'}) != word:
+                        continue
+
+                    if number.text == "1":
+                        categories = default_category
+                        meaning = number.next_element.next_element
+                    else:
+                        categories_symbol = number.find_next('em', {'class': 'jk'}).text.lower().split(' ')
+                        categories = [constants.CATEGORY[category] for category in categories_symbol] or default_category
+                        meaning = number.next_element.next_element if categories == default_category else number.find_next('em', {'class': 'jk'}).next_element.next_element
+
+                    if meaning.text.strip().endswith(':'):
+                        example = meaning.next_element.next_element.text.replace('~', word.text).strip().strip(';').capitalize()
+                    else:
+                        example = None
+
+                    meanings.append({
+                        'meaning': self._format_string(meaning.text),
+                        'categories': categories,
+                        'example': example
+                    })
+                
+                derives.append({
+                    'word': word.text.title(),
+                    'syllables': syllables.text.strip('\\').strip('/').split('·'),
+                    'meanings': meanings
+                })
+            else:
+                categories_symbol = word.find_next_sibling('em', {'class': 'jk'}).text.lower().split(' ')
+                meaning = word.find_next_sibling('em', {'class': 'jk'}).next_element.next_element
+
+                if meaning.text.strip().endswith(':'):
+                    example = meaning.next_element.next_element.text.replace('~', word.text).strip().strip(';').capitalize()
+                else:
+                    example = None
+
+                derives.append({
+                    'word': word.text.title(),
+                    'syllables': syllables.text.strip('\\').strip('/').split('·'),
+                    'meanings': [{
+                        'meaning': self._format_string(meaning.text),
+                        'categories': [constants.CATEGORY[category] for category in categories_symbol],
+                        'example': example
+                    }]
+                })
+        return derives
     
     @cached_property
     def related_words(self):
@@ -158,8 +242,8 @@ class Word:
         return related_words
 
     @cached_property
-    def pribahasa(self) -> list:
-        meaning = []
+    def proverbs(self) -> list:
+        proverbs = []
         # Cari tag em dengan class pb untuk pribahasa
         for pb in self.d1_section.select("em.pb"):
             mean = []
@@ -179,20 +263,20 @@ class Word:
             if not pb_text:
                 pb_text = pb.text
 
-            meaning.append(
+            proverbs.append(
                 {
                     'meaning': mean,
-                    'pribahasa': [ex for ex in self._format_pribahasa(pb_text).split(';') if self.word in ex ][0]
+                    'proverb': [ex for ex in self._format_proverb(pb_text).split(';') if self.word in ex ][0]
                 }
             )
 
-        return meaning
+        return proverbs
 
-    def _format_pribahasa(self, str) -> str:
-       return str.strip().replace('--', self.word).replace(', pb', '')
+    def _format_proverb(self, string) -> str:
+        return string.strip().replace('--', self.word).replace('  ', ' ').replace(', pb', '')
 
-    def _format_string(self, str) -> str:
-        return str.strip().strip(';').strip(':').capitalize()
+    def _format_string(self, string) -> str:
+        return string.strip().strip(';').strip(':').strip(': --').capitalize()
             
-    def _is_already_in_bowl(self):
+    def _is_already_in_bowl(self) -> bool:
         return self.input_word in utils.load_soup_bowl()
